@@ -1,0 +1,417 @@
+---
+title: "Review Of Regressions"
+author: "EricDelmelle"
+date: "2024-02-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# 1. Exploratory Data Analysis (EDA) on Boston Housing Dataset
+This analysis delves into the Boston Housing dataset, originally studied by Harrison and Rubinfeld in 1979, which encompasses data from 506 census tracts from the 1970 census. The dataset serves as a rich resource for understanding the dynamics influencing home values.
+
+The dataset, accessible via the 'MASS' library in R, comprises several features that potentially affect the median value of homes (`medv`). Key features include:
+
+- `crim`: Per capita crime rate by town.
+- `zn`: Proportion of land zoned for residential lots over 25,000 sq.ft.
+- `indus`: Proportion of non-retail business acres per town.
+- `chas`: Charles River dummy variable (1 if tract bounds river; 0 otherwise).
+- `nox`: Concentration of nitric oxides (ppm).
+- `rm`: Average number of rooms per dwelling.
+- `age`: Proportion of owner-occupied units built prior to 1940.
+- `dis`: Weighted distances to five Boston employment centers.
+- `rad`: Accessibility index to radial highways.
+- `tax`: Property-tax rate per $10,000.
+- `ptratio`: Pupil-teacher ratio by town.
+- `black`: Proportion of the black population by town.
+- `lstat`: Lower status of the population (%).
+
+Our goal is to apply regression models and variable reductions to identify which factors significantly impact the median value of homes in Boston, providing insights into the urban housing market dynamics. 
+
+But first, we will conduct EDA, which is a crucial part and usually takes up most of the time. A proper and extensive EDA would reveal interesting patterns and help to prepare the data in a better way!
+
+
+### Load the necessary library
+```{r, message = FALSE}
+library(MASS)
+library(corrplot) #for visualisation of correlation
+library(lattice) #for visualisation
+library(ggplot2) #for visualisation
+library(caTools) #for splittind data into testing and training data
+library(dplyr) #manipulating dataframe
+library(plotly) #converting ggplot to plotly
+```
+
+## Dataset
+```{r, message = FALSE}
+data(Boston)
+```
+
+Now let's perform some exploratory data analysis (EDA) to understand how the variables of the data are related to one another. 
+
+### View the first few rows of the dataset
+```{r, message = FALSE}
+head(Boston)
+```
+Here we can see that the variables 'chas' and 'rad' are non numeric. A command called *summary* gives you the basic statistics of your dataset like mean, median, 1st quartile, 2nd quartile etc.
+
+```{r, message = FALSE}
+summary(Boston)
+```
+
+### Distribution of variables --> boxplots
+Here we can see that variable 'crim' and 'black' take wide range of values. Variables 'crim', 'zn', 'rm' and 'black' have a large difference between their median and mean which indicates lot of *outliers* in respective variables. 
+- `crim`: Per capita crime rate by town.
+- `zn`: Proportion of land zoned for residential lots over 25,000 sq.ft.
+- `rm`: Average number of rooms per dwelling.
+- `black`: Proportion of the black population by town.
+
+This can indeed be found by looking at some *boxplots* for those variables.
+```{r}
+par(mfrow = c(1, 4))
+boxplot(Boston$crim, main='crim',col='Sky Blue')
+boxplot(Boston$zn, main='zn',col='Sky Blue')
+boxplot(Boston$rm, main='rm',col='Sky Blue')
+boxplot(Boston$black, main='black',col='Sky Blue')
+```
+## Corelation
+Correlation is a statistical measure that suggests the level of linear dependence between two variables that occur in pair. Its value lies between -1 to +1
+
+- If above 0 it means positive correlation i.e. X is directly proportional to Y.
+- If below 0 it means negative correlation i.e. X is inversly proportional to Y.
+- Value 0 suggests weak relation.
+
+Usually we would use the function **cor** to find correlation between two variables, but since we have 14 variables here, it is easier to examine the correlation between different varables using corrplot function in library 'corrplot'. Correlation plots are a great way of exploring data and seeing the level of interaction between the variables.
+
+```{r, message = FALSE}
+corrplot(cor(Boston))
+```
+
+## Non-linearity
+We will now try to find out the linearity between 'medv' and other variables keeping one thing in mind-
+"It is not worth complicating the model for a very small increase in Adjusted R-squared value"
+
+```{r, message = FALSE}
+dropList <- c('chas','rad','crim','zn','black')
+#We drop chas and rad because they are non numeric
+#We drop crim, zn and black because they have lot of outliers
+housingplot <- Boston[,!colnames(Boston) %in% dropList]
+splom(housingplot,col = 'Sky Blue')
+```
+
+The first row of plot is the most useful. It indicates how different variables impact the median value of homes in Boston.
+
+Analyzing scatter plot and Adjusted R-squared values between medv and other variables for linearity we find that only 'lstat' has significantly high difference of Adjusted R-square between its squared model and linear model for it to be mathematically squared inside the model using the identity function (I).
+`lstat`: Lower status of the population (%).
+
+```{r, message = FALSE}
+scatter.smooth(Boston$medv, Boston$lstat)
+```
+
+
+# 2. Multiple Linear Regression
+## How to analyze a model in Linear Regression
+
+- The Null Hypothesis **H0** is that the coefficients associated with the variables are zero.
+- The alternate hypothesis **HA** is that the coefficients are not equal to zero (i.e. there exists a    
+  relationship between the independent variable in question and the dependent variable).
+- If Pr(>|t|) value has 3 stars, it means that coefficient is of very high statistical significance. 
+- Pr(>|t|) value less than 0.05 is considered as good.
+- Multiple R-squared measures the proportion of the variation in your dependent variable explained by all of your independent variables in the model.
+- Adjusted R-squared measures the proportion of variation explained by only those independent variables that really help in explaining the dependent variable. It penalizes you for adding independent variable that do not help in predicting the dependent variable.
+- If F-statistic is significant then Model is good (higher the value of F-statistic the better).
+
+Our key objective is to determine the variable(s) that would give best predictive model. Remember that we try to predict the median value of owner-occupied homes. Let's begin by fitting all the variables.
+
+```{r, message = FALSE}
+lm.fit1 <- lm(medv~.,data=Boston) # medv is the median value of owner-occupied homes
+summary(lm.fit1)
+```
+### Iteration 1
+- R-squared value is around 0.74
+- F-statistic value is 108
+
+## Improvements
+Variables 'age' and 'indus' have very high Pr(>|t|) value and low significance hence removing them could give us a better model. As we noticed in EDA 'lstat' is non-linear and hence can be squared for a better fit.
+
+```{r, message = FALSE}
+lm.fit2 <- lm(medv~.-age-indus+I(lstat^2),data=Boston) 
+summary(lm.fit2)
+```
+
+### Iteration 2
+- R-squared value is around 0.79
+- F-statistic value is 152
+
+### Is second model better?
+```{r, message = FALSE}
+anova(lm.fit2, lm.fit1)
+```
+## Improvements
+- What if I use a third power polynomial for `lstat`, lower status of the population (%).    
+
+```{r, message = FALSE}
+lm.fit2B <- lm(medv~.-age-indus+poly(lstat, 3),data=Boston)
+summary(lm.fit2B)
+```
+
+### Is model2B better?
+```{r, message = FALSE}
+anova(lm.fit2B, lm.fit2)
+```
+
+## Improvements
+- Variable 'zn' has very high Pr(>|t|) value and low significance hence removing it could give us a better model.
+- Interaction between highly significant variables could give us a better model.
+
+```{r, message = FALSE}
+lm.fit3 <- lm(medv~.-indus-age-zn+poly(lstat, 3)+rm*lstat-black+rm*rad+lstat*rad,data=Boston)
+summary(lm.fit3)
+```
+### Iteration 3
+- R-squared value increased to around 0.84
+- F-statistic value inreased to 219
+
+
+## Final Analysis of our model
+```{r, message = FALSE}
+residuals <- data.frame('Residuals' = lm.fit3$residuals)
+res_hist <- ggplot(residuals, aes(x=Residuals)) + geom_histogram(color='black', fill='skyblue') + ggtitle('Histogram of Residuals')
+res_hist
+```
+
+Looking at the above histogram, we can say that graph is slightly right skewed and therefore can almost be considered as normally distributed. 
+
+### Diagnostic plots
+```{r, message = FALSE}
+par(mfrow=c(2,2))
+plot(lm.fit3, col='Sky Blue')
+```
+Now we can plot our predictions versus our actual values. Note `geom_smooth()` using method = 'loess' and formula 'y ~ x'
+We do a very good job at predicting, but not so much at the very end of the spectrum.
+```{r, message = FALSE}
+Boston$predicted.medv <- predict(lm.fit3,Boston)
+pl1 <-Boston %>% 
+  ggplot(aes(medv,predicted.medv)) +
+  geom_point(alpha=0.5) + 
+  stat_smooth(aes(colour='black')) +
+  xlab('Actual value of medv') +
+  ylab('Predicted value of medv') +
+  theme_bw()
+
+ggplotly(pl1)
+```
+
+
+
+# 2. Logistic Regression
+You generally use a logistic regression when you have a binary response (like an outcome variable). In the Boston dataset we don't have a bonary outcome variable. But let's use the target variable `medv` (median value of owner-occupied homes)and create a binary variable indicating whether the median value is above the median of `medv` (high-value homes) or not. We'll then perform logistic regression with interaction terms using this binary outcome.
+
+
+## Create a binary variable based on the median value of medv
+```{r, message = FALSE}
+Boston$high_value <- ifelse(Boston$medv > median(Boston$medv), 1, 0)
+```
+
+## Perform logistic regression with interaction terms
+## For example, interaction between lstat and rm
+```{r, message = FALSE}
+model_logistic <- glm(high_value ~  lstat * rm + tax + black, family = binomial(link = "logit"), data = Boston)
+summary(model_logistic)
+```
+
+```{r, message = FALSE}
+library(Epi)
+prob <- predict(model_logistic, type='response')
+ROC(test = prob, stat = model_logistic$y)
+```
+
+# 3. Variable Reduction and PCA
+
+## PCA for variable reduction and grouping
+This code snippet performs PCA on the Boston dataset aiming to reduce the number of variables to 5 principal components and uses a varimax rotation for better interpretability.
+```{r, message = FALSE}
+library(psych) # For PCA and factor analysis
+pca_result <- principal(Boston, nfactors = 5, rotate = "varimax")
+print(pca_result)
+```
+
+### Circle of Correlations (Correlation Circle Plot)
+
+A circle of correlations plot displays the variables' loadings on the principal components, allowing you to see the correlation of each variable with the components. Variables are represented as vectors, and their position relative to the circle and to each other provides insight into their correlation with the principal components and among themselves.
+
+To create a correlation circle plot, you can use the FactoMineR and factoextra packages in R:
+```{r, message = FALSE}
+library(FactoMineR)
+library(factoextra)
+
+# Perform PCA using FactoMineR for better integration with factoextra
+pca_res <- PCA(Boston, graph = FALSE)
+
+# Create the correlation circle plot
+fviz_pca_var(pca_res, col.var = "contrib", 
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"), 
+             repel = TRUE) # Avoid text overlapping
+```
+This plot shows how variables contribute to the two main principal components. Variables closer to the circle's edge have a stronger correlation with the principal components. The direction indicates the nature of the relationship, and the distance between variables suggests how closely related they are.
+
+
+### Component Loadings and SS Loadings
+SS Loadings: Sum of squared loadings for each component (RC1, RC3, RC2, RC5, RC4), representing the variance captured by each component. The values (3.60, 3.07, 3.06, 1.14, 1.02) suggest how much of the variance in the original variables is accounted for by each principal component. RC1 captures the most variance, followed closely by RC3 and RC2.
+
+### Variance Explained
+- Proportion Var: This indicates the proportion of total variance in the dataset that each component explains. RC1 explains 24% of the variance, and the values decrease for subsequent components. This helps in understanding the significance of each component in representing the dataset.
+- Cumulative Var: Shows the cumulative variance explained by the components up to that point. By RC3, 44% of the variance is explained, increasing to 65% by RC2, and eventually reaching 79% with all five components.
+- Proportion Explained: This is the proportion of explained variance relative to the total variance explained by all components. RC1, RC3, and RC2 each explain a substantial portion (around 26-30%), indicating they are significant in capturing the dataset's variance.
+- Cumulative Proportion: The cumulative proportion of variance explained, reaching 100% with all five components, indicates that these components collectively capture all the variance explained by the PCA.
+
+### Model Fit and Complexity
+- Mean item complexity: At 1.6, this suggests the average complexity of how the original variables load across the components. Lower complexity indicates that variables tend to load strongly on fewer components, which is desirable for clearer interpretation.
+- RMSR (Root Mean Square of the Residuals): A measure of the average magnitude of the residuals, with 0.05 indicating a relatively low error between the actual data points and their approximations by the PCA model. This suggests a good fit.
+- Empirical Chi Square: A test statistic measuring the goodness-of-fit of the PCA model, with a value of 258.88 and a very low probability (p < 7.9e-34), indicating that the model significantly fits the data better than a model of independence.
+- Fit based upon off diagonal values: At 0.99, this suggests that the PCA model captures almost all the systematic variance in the data, leaving very little unexplained variance, which is ideal for a PCA model.
+
+### Interpretation Summary
+The PCA on the Boston dataset with five components suggests a well-fitting model that captures a significant portion of the variance in the dataset. The first three components (RC1, RC3, RC2) are particularly important, explaining a substantial proportion of the variance. This indicates that these components capture key underlying patterns or dimensions within the Boston dataset, such as socio-economic factors, environmental quality, or housing characteristics.
+
+The high cumulative proportion of explained variance (79%) by all five components and the low RMSR value (0.05) indicate a good model fit. However, interpreting the specific meaning of each component requires examining the loadings of original variables on these components, which is not provided here. Typically, components are interpreted by analyzing which variables have strong loadings (both positive and negative) on them, thereby representing different dimensions of the dataset's variability.
+
+### Visualization
+- Scree Plot: Look for the "elbow" where the eigenvalues start to level off to determine the number of components to retain.
+- Biplot: Observe how observations (points) are distributed with respect to the principal components and which variables (arrows) contribute most to each component. The direction and length of the arrows indicate how each variable contributes to the principal components.
+```{r, message = FALSE}
+# Assume pca_result is the result of PCA using prcomp() or principal()
+pca_result <- prcomp(Boston, scale. = TRUE)
+
+# Scree Plot
+plot(pca_result$sdev^2, type = "b", xlab = "Principal Component",
+     ylab = "Eigenvalue", main = "Scree Plot")
+abline(h = 1, col = "red", lty = 2) # Optional: line at eigenvalue = 1
+
+# Biplot
+biplot(pca_result, scale = 0)
+```
+
+# 4. Factor Analysis
+This performs a factor analysis on the Boston dataset, attempting to identify underlying relationships between variables by reducing them to 5 factors. The minres method is used for factor extraction, and a varimax rotation is applied.
+```{r}
+fa_result <- fa(Boston, nfactors = 5, fm = 'minres', rotate = "varimax")
+print(fa_result)
+```
+### Interpretation
+Interpreting the results of a factor analysis involves several steps, focusing on understanding the factor loadings, the number of factors extracted, the explained variance, and evaluating the overall fit of the model. I'll guide you through a hypothetical interpretation based on the fa_result obtained from the factor analysis of the Boston dataset using the fa() function from the psych package in R. 
+
+### Factor Loadings.
+These are the correlations between the original variables and the extracted factors. High absolute values (typically above 0.4 or 0.5) indicate a strong association between the variable and the factor. In the output, you'll see a matrix of factor loadings for each variable on each factor.
+- Positive Loadings indicate that as the factor increases, the associated variable also tends to increase.
+- Negative Loadings suggest that as the factor increases, the associated variable tends to decrease.
+
+### Number of Factors
+The nfactors = 5 in your analysis suggests you've requested five factors to be extracted. The decision on the number of factors to retain can be informed by the eigenvalues (factors with eigenvalues greater than 1 are often considered significant), the scree plot, or parallel analysis. The output will show how many factors were extracted and their eigenvalues.
+
+### Explained Variance
+Each factor will explain a certain percentage of the total variance in the dataset. In the output, look for a table summarizing the variance explained by each factor, as well as the cumulative variance explained by the factors together. A model that explains a higher percentage of variance is generally considered more informative. Ideally, the factors retained should cumulatively explain a significant portion of the total variance (e.g., 60-70% or more).
+
+
+### Example Interpretation
+
+Suppose your factor analysis results indicated that:
+
+    Factor 1 has strong positive loadings on variables related to environmental quality (e.g., air quality, green spaces).
+    Factor 2 shows strong positive loadings on economic variables (e.g., employment rate, median income).
+    Factor 3 is heavily loaded by housing quality indicators (e.g., average number of rooms, age of buildings).
+
+You could interpret Factor 1 as representing "Environmental Quality," Factor 2 as "Economic Status," and Factor 3 as "Housing Quality." Each factor captures a different dimension of the dataset that influences the median value of owner-occupied homes.
+
+Remember, factor analysis involves a degree of subjective interpretation, especially in naming the factors. It's crucial to consider the theoretical framework and empirical context of your data when interpreting the factors.
+
+
+### Factor Loadings and SS Loadings
+The output does not directly show the standardized loadings (pattern matrix) for each variable on each factor, which would indicate how strongly each variable is associated with each factor. However, the "SS loadings" (sum of squared loadings) for each factor are provided:
+
+    MR1: 3.27
+    MR3: 3.14
+    MR2: 1.88
+    MR5: 1.14
+    MR4: 0.94
+
+These values represent the variance explained by each factor in the space of observed variables. Higher SS loadings indicate a factor explains more variance, with MR1 and MR3 being the most significant contributors.
+Variance Explained
+
+### Proportion Var: 
+Indicates the proportion of the total variance explained by each factor. MR1 and MR3 explain a larger portion of the variance (22% and 21%, respectively), suggesting they capture more significant underlying dimensions of the data.
+### Cumulative Var: 
+Shows the cumulative variance explained as we include more factors, reaching 69% with all five factors. This suggests that these five factors together account for a substantial part of the variability in the dataset.
+### Proportion Explained: 
+Reflects each factor's contribution relative to the total variance explained by all factors. MR1 and MR3 are the most dominant factors.
+
+### Fit and Adequacy Measures
+- RMSR (Root Mean Square of the Residuals): A measure of the model fit, with lower values indicating a better fit. A value of 0.02 is quite low, suggesting a good fit.
+- Tucker Lewis Index (TLI): At 0.902, close to 1, indicating a good fit of the model to the data.
+- RMSEA (Root Mean Square Error of Approximation): At 0.1 with a confidence interval of 0.088 to 0.113, it suggests a moderate fit. RMSEA values below 0.05 indicate a good fit, values up to 0.08 represent a reasonable error of approximation, and values around 0.1 are marginal.
+- BIC (Bayesian Information Criterion): A negative value (-5.53) indicates that, relative to other models, this model has a better balance of fit and complexity.
+
+### Factor Score Adequacy
+- Correlation of scores with factors: High correlations (0.88 to 0.96) between regression-based factor scores and the factors themselves indicate that the factors are well-represented by their scores.
+- Multiple R square of scores with factors: Values ranging from 0.78 to 0.92 suggest that a substantial proportion of each factor's variance is predictable from the observed variables.
+- Minimum correlation of possible factor scores: Indicates the lowest correlation between actual scores and their factor scores across factors, ranging from 0.56 to 0.85, suggesting moderate to strong predictability.
+
+### Interpretation Summary
+The factor analysis of the Boston dataset with five factors shows a model that captures a significant portion of the variability in the data, with MR1 and MR3 being the most informative factors. The model demonstrates a moderate to good fit based on the RMSR, TLI, and RMSEA values, indicating that the factors extracted are meaningful and represent underlying dimensions of the data well.
+
+These factors likely represent underlying concepts in the data, such as socio-economic status, environmental quality, housing quality, etc., although the specific interpretation of each factor would require a closer look at the variables loading strongly on each factor. The overall model suggests a good balance of complexity and fit, making it a potentially useful representation of the underlying structure of the Boston housing data.
+
+
+# 5. Multilevel modeling
+Creating a multilevel model (also known as hierarchical linear modeling) with the Boston dataset in R requires a bit of creativity because the dataset is not inherently structured for multilevel analysis, given its design around housing data for various suburbs of Boston. Multilevel models are typically used for data that is nested in nature, such as students within schools, patients within hospitals, etc.
+
+However, for demonstration purposes, let's conceptualize **a scenario where we might treat the chas variable (Charles River dummy variable indicating if a tract bounds the river) as a grouping variable, suggesting two levels of data**: properties that are by the river and those that are not. While this is a simplistic and not a perfect use case for multilevel modeling (since chas has only two levels and is not a classic "grouping" variable like schools in districts or employees in companies), it can serve to illustrate how you might approach this type of analysis in R.
+
+We'll use the *lme4* package for this example to fit a random intercept model, where we predict the median value of owner-occupied homes (medv) based on the average number of rooms (rm), treating the river adjacency (chas) as a grouping variable for the intercepts.
+
+```{r, message = FALSE}
+#install.packages("lme4", dependencies = TRUE)
+library(Matrix)
+library(lme4)
+library(MASS)
+```
+
+```{r, message = FALSE}
+model <- lmer(medv ~ rm + (1 | chas), data = Boston)
+summary(model)
+```
+
+The output of summary(model) will give you estimates for the fixed effects (the global effect of rm on medv) and the random effects (how much the intercept varies by chas).
+
+- Fixed effects: Look at the estimate for rm to see how the median value of homes changes with the number of rooms, across the entire dataset.
+- Random effects: The variance component for the intercept by chas will tell you how much additional variability in median home values is explained by whether properties are adjacent to the Charles River or not.
+
+Keep in mind this is a highly simplified example and the actual utility of a multilevel model for this dataset is limited. Multilevel modeling is most powerful for nested data structures (like students within classrooms within schools) which the Boston dataset does not naturally provide. For a more appropriate application of multilevel modeling, you would need a dataset that reflects a hierarchical structure.
+
+The output from the lmer function in R represents the results of a linear mixed-effects model fitted to the Boston housing dataset. The model predicts median value of owner-occupied homes (medv) based on the average number of rooms (rm), with a random intercept for whether the tract bounds the river (chas). Here's how to interpret the key parts of this output:
+REML Criterion
+
+REML criterion at convergence: 3337.7. This is the value of the restricted (or residual) maximum likelihood (REML) criterion at convergence. The REML approach is used for estimating the variance components in the model. Lower values generally indicate a better fit, but this value is primarily used for comparing nested models rather than interpreted on its own.
+
+### Scaled Residuals
+- The summary of scaled residuals indicates how well the model fits the data. Residuals are the differences between observed and predicted values. Ideally, they should be randomly distributed around zero.
+- Min, 1Q (First Quartile), Median, 3Q (Third Quartile), Max: These values show the range and distribution of residuals. A wide range suggests there may be outliers or the model may not capture all variability in the data.
+
+### Random Effects
+- Groups: Indicates the grouping factor, chas, which has two levels (tracts bounding the river or not).
+- Variance and Std.Dev. of (Intercept): The variance (7.671) and standard deviation (2.770) of the random intercepts for chas show the variability in the median home values' baseline level associated with the river proximity. A variance of 0 would indicate no variability between groups.
+- Residual Variance and Std.Dev.: The residual variance (42.790) and standard deviation (6.541) reflect the variability in median home values not explained by the model.
+
+### Fixed Effects
+- Estimate: The estimated effect of the predictor on the response variable. The intercept (-32.2724) represents the predicted value of medv when rm is 0, which is not meaningful in this context. The estimate for rm (8.9781) suggests that, on average, each additional room is associated with an increase of approximately $8,978 in the median value of owner-occupied homes.
+- Std. Error: Measures the variability of the estimate. Smaller values indicate more precise estimates.
+- t value: The ratio of the Estimate to the Std. Error. Larger absolute values indicate stronger evidence against the null hypothesis (which would typically state that there is no effect).
+
+### Correlation of Fixed Effects
+Correlation between Intercept and rm: -0.794. This high negative correlation suggests that models that estimate a higher baseline median value (the intercept) tend to associate a smaller increase in home value with each additional room, and vice versa. This is common in regression models and reflects the inverse relationship between intercepts and slopes when they are estimated together.
+
+### Overall Interpretation
+The model suggests that there's significant variability in median home values based on the number of rooms, with each additional room associated with a significant increase in home value. The random effects for chas indicate there's additional variability in home values that can be attributed to whether or not a property is adjacent to the Charles River, though this output does not directly quantify the difference between the two chas groups in terms of medv.
+
+Given the significant t value for rm, the number of rooms is a strong predictor of median home values. However, interpreting the intercept meaningfully requires context (e.g., considering it at a meaningful value of rm rather than when rm equals zero). The model also indicates substantial unexplained variability (residuals), suggesting that factors not included in the model may also influence median home values.
