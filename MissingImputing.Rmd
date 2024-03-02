@@ -1,0 +1,107 @@
+---
+title: "Missing and Imputing Data"
+author: "EricDelmelle"
+date: "2024-03-01"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Small example of code showing how to deal with missing data. This dataset contains daily air quality measurements in New York, May to September 1973.
+
+
+## Load necessary libraries
+```{r}
+library(tidyverse)
+library(ggplot2)
+```
+
+## Load the airquality dataset
+```{r}
+data("airquality")
+head(airquality)
+```
+
+## Visualize airquality dataset
+We can see the temporal variation of the airquality (Ozone here), and gaps where data is missing.
+```{r}
+# Adding a unique identifier for each day
+airquality$DayID <- 1:nrow(airquality)
+
+# Convert Month to a factor for better plotting
+airquality$Month <- factor(airquality$Month, labels = c("May", "June", "July", "August", "September"))
+
+# Create the spaghetti plot using ggplot
+ggplot(airquality, aes(x = DayID, y = Ozone, group = Month, color = Month)) +
+  geom_line() + # Add lines
+  geom_point(size = 1, alpha = 0.5) + # Add points
+  theme_minimal() + # Use a minimal theme
+  labs(title = "Daily Ozone Levels by Month",
+       x = "Day",
+       y = "Ozone (ppb)",
+       color = "Month") +
+  theme(legend.position = "right") # Position the legend
+```
+
+
+## Check for missing data
+```{r}
+missing_data <- sapply(airquality, function(x) sum(is.na(x)))
+print(missing_data)
+cat("There are", sum(is.na(airquality)), "missing values in the dataset.\n")
+```
+
+## Impute missing data using the mean of the sample
+Note: It's often better to consider the distribution and nature of data before imputation
+```{r}
+numeric_columns <- sapply(airquality, is.numeric)
+airquality_imputed <- airquality
+airquality_imputed[numeric_columns] <- lapply(airquality_imputed[numeric_columns], function(x) {
+  if(sum(is.na(x)) > 0) {
+    x[is.na(x)] <- mean(x, na.rm = TRUE)
+  }
+  x
+})
+```
+
+## Identify outliers for the Ozone variable
+```{r}
+ozone <- airquality_imputed$Ozone
+qnt <- quantile(ozone, probs=c(.25, .75), na.rm = TRUE)
+H <- 1.5 * IQR(ozone, na.rm = TRUE)
+outlier_low <- qnt[1] - H
+outlier_high <- qnt[2] + H
+ozone_outliers <- ifelse(ozone < outlier_low | ozone > outlier_high, TRUE, FALSE)
+```
+
+## Identify outliers
+For simplicity, let's consider outliers as values more than 1.5 IQR away from the 1st and 3rd quartiles
+```{r}
+airquality_imputed[numeric_columns] <- lapply(airquality_imputed[numeric_columns], function(x) {
+  if(sum(is.na(x)) > 0) {
+    x[is.na(x)] <- mean(x, na.rm = TRUE)
+  }
+  x
+})
+```
+
+## Prepare a dataframe for plotting
+```{r}
+plot_data <- data.frame(Index = 1:length(ozone), Ozone = ozone, Outlier = ozone_outliers)
+```
+
+
+## Spaghetti plot for Ozone variable using ggplot2, highlighting outliers
+```{r}
+ggplot(plot_data, aes(x = Index, y = Ozone)) +
+  geom_line(color = "gray", size = 1) +  # Base line for all Ozone values
+  geom_point(aes(color = Outlier), size = 2) +  # Points, colored by outlier status
+  scale_color_manual(values = c("FALSE" = "black", "TRUE" = "red")) +  # Color outliers in red
+  theme_minimal() +
+  labs(title = "Spaghetti Plot for Ozone with Outliers",
+       x = "Index",
+       y = "Ozone") +
+  theme(legend.position = "none")  # Remove legend for clarity
+```
