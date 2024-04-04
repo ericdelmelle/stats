@@ -1,0 +1,87 @@
+---
+title: "Effect Modification"
+author: "Eric Delmelle (Penn, Drexel with GPT help)"
+date: "2024-04-04"
+output: html_document
+---
+
+# Background
+This script is designed to analyze and visualize the effect of smoking on pulse rate across different age groups.  
+
+**Effect modification** is an important concept in epidemiology and health research and in other domains(!), as it can reveal more nuanced relationships between variables than can be understood through simple main effects models.
+
+
+# Loading libraries  
+We will use the *NHANES*, *dplyr*, and *ggplot2* packages. These are essential for handling the dataset, performing data manipulation, and plotting the results.
+```{r}
+if (!requireNamespace("NHANES", quietly = TRUE)) install.packages("NHANES")
+if (!requireNamespace("dplyr", quietly = TRUE)) install.packages("dplyr")
+if (!requireNamespace("ggplot2", quietly = TRUE)) install.packages("ggplot2")
+
+library(NHANES)
+library(dplyr)
+library(ggplot2)
+```
+
+# Data Preparation: 
+The script filters the NHANES dataset to include only adults (age 20 and above) with non-missing values for smoking status (SmokeNow) and pulse rate (Pulse). It then categorizes individuals into age groups to simplify the analysis.
+
+## Filter the dataset for adults and non-missing smoking status and pulse rate
+```{r}
+data <- NHANES %>%
+  filter(Age >= 20, !is.na(SmokeNow), !is.na(Pulse))
+```
+
+## Categorize age to simplify analysis
+```{r}
+data$AgeGroup <- cut(data$Age, breaks = c(19, 30, 40, 50, 60, 70, Inf), labels = c("20-30", "31-40", "41-50", "51-60", "61-70", "71+"), right = FALSE)
+```
+
+#Analyzing the Effect: 
+It calculates the mean pulse rate for each combination of age group and smoking status, preparing the data for visualization.
+```{r}
+effect_analysis <- data %>%
+  group_by(AgeGroup, SmokeNow) %>%
+  summarise(MeanPulse = mean(Pulse, na.rm = TRUE)) %>%
+  ungroup()
+```
+
+#Visualizing the Effect: 
+Two visualizations are created. The first one is a bar chart showing the mean pulse rate by age group and smoking status. The second visualization is generated after fitting a linear model to predict pulse rate based on smoking status and age group, plotting predicted pulse rates for each combination of age group and smoking status.
+```{r}
+ggplot(effect_analysis, aes(x = AgeGroup, y = MeanPulse, fill = SmokeNow)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Effect of Smoking on Pulse Rate by Age Group", x = "Age Group", y = "Mean Pulse Rate") +
+  scale_fill_manual(values = c("No" = "blue", "Yes" = "red")) +
+  theme_minimal()
+```
+
+#Modeling and Prediction: 
+A linear model is used to understand the relationship between pulse rate and the interaction between smoking status and age group. Predictions from this model are then visualized, showing how pulse rate varies across age groups for smokers and non-smokers.
+```{r}
+data$SmokeNow <- as.factor(data$SmokeNow)
+data$AgeGroup <- as.factor(data$AgeGroup)
+
+model <- lm(Pulse ~ SmokeNow * AgeGroup, data = data)
+summary(model)
+
+
+new_data <- expand.grid(AgeGroup = levels(data$AgeGroup),
+                        SmokeNow = levels(data$SmokeNow))
+
+# Predict values
+new_data$PredictedPulse = predict(model, new_data)
+
+levels(new_data$SmokeNow) <- c("Non-smoker", "Smoker")
+library(ggplot2)
+
+ggplot(new_data, aes(x = AgeGroup, y = PredictedPulse, color = SmokeNow)) +
+  geom_line(aes(group = SmokeNow), linewidth = 1) + # Corrected for deprecated warning
+  geom_point(size = 2) + # Add points to emphasize the actual predictions
+  labs(title = "Predicted Pulse Rate by Smoking Status Across Age Groups",
+       x = "Age Group", y = "Predicted Pulse Rate") +
+  theme_minimal() +
+  scale_color_manual(values = c("Non-smoker" = "blue", "Smoker" = "red"))
+```
+
+
