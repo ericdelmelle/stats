@@ -1,0 +1,94 @@
+---
+title: "Multilevel Regression"
+author: "EricDelmelle (Penn, Drexel, ChatGPT!)"
+date: "2024-04-04"
+output: html_document
+---
+
+
+
+## Multilevel Modeling in Public Health
+Many kinds of data, including observational data collected in the human and biological sciences, have a hierarchical or clustered structure. For example, children with the same parents tend to be more alike in their physical and mental characteristics than individuals chosen at random from the population at large. Individuals may be further nested within geographical areas or institutions such as schools or employers. Multilevel data structures also arise in longitudinal studies where an individual’s responses over time are correlated with each other.
+
+For this example, we'll use the sleepstudy dataset from the *lme4* package, which, although not strictly a public health dataset, provides a good proxy for understanding how treatments affect subjects over time in a health context. This dataset tracks the reaction times of subjects across days with varying amounts of sleep, making it a suitable candidate for a mixed-effects model to account for both fixed effects (days) and random effects (subjects).
+
+## Install and load necessary packages
+```{r}
+if (!requireNamespace("lme4", quietly = TRUE)) install.packages("lme4")
+library(lme4)
+```
+
+## Load the sleepstudy dataset
+```{r}
+data("sleepstudy", package = "lme4")
+```
+
+## View the first few rows of the dataset
+```{r}
+head(sleepstudy, 15)
+```
+
+## Visualizing the effect of days on reaction time
+```{r}
+library(ggplot2)
+data("sleepstudy", package = "lme4")
+
+ggplot(sleepstudy, aes(x = Days, y = Reaction)) +
+  geom_point(aes(color = factor(Subject))) +  # Apply color grouping only to points
+  geom_line(aes(group = Subject, color = factor(Subject))) +  # Apply color and group only to lines
+  geom_smooth(method = "lm", se = TRUE, color = "black", linetype = "solid") +  # Overall regression line for all data
+  theme_minimal() +
+  labs(title = "Reaction Time by Days of Sleep Deprivation",
+       x = "Days of Sleep Deprivation",
+       y = "Reaction Time (ms)",
+       color = "Subject")
+```
+
+## Fit a multilevel model
+This model investigates the relationship between the number of days of sleep deprivation (Days) and the reaction times (Reaction) of subjects, while accounting for the random effects of individual subjects (Subject). 
+```{r}
+model_sleep <- lmer(Reaction ~ Days + (1 | Subject), data=sleepstudy)
+```
+Everything to the left of the | indicates the effects that should be random, and the variable to the right of the | is the grouping variable across which the effects should vary. What is the “1”? It’s the way we refer to the intercept. It’s not technically necessary in some cases, but it’s safe to just always include it in your random effects specification, I think.
+
+## Display the summary of the model
+```{r}
+summary(model_sleep)
+```
+The considerable random effects variance indicates that subjects differ significantly in their baseline reaction times. The model accounts for both the fixed effect of time (days of sleep deprivation) and the random effect of individual differences between subjects, providing a more nuanced understanding of how sleep deprivation affects reaction time.
+### Fixed Effects
+- (Intercept) 251.4051: Estimated average reaction time (in milliseconds) for a subject with zero days of sleep deprivation. The estimate is highly significant, as indicated by the t value of 25.79, meaning when Days is 0, the reaction time is expected to be 251.4051 ms.
+
+- Days 10.4673: Estimated change in reaction time for each additional day of sleep deprivation. Specifically, reaction time is expected to increase 
+by 10.4673 ms for each additional day of sleep deprivation. The high t value of 13.02 indicates this is a highly significant effect.
+
+### Random Effects
+The random effects section tells us about the variability in reaction times that is attributed to differences between subjects, beyond the fixed effect of days of sleep deprivation.
+
+- Subject (Intercept) 1378.2 (Variance) and Std.Dev. 37.12: This indicates there is considerable variability in the baseline reaction times among the subjects, with a standard deviation of 37.12 ms. This variability is part of the model to account for the fact that not all subjects start with the same reaction time.
+
+-  Residual 960.5 (Variance) and Std.Dev. 30.99: The residual variance and standard deviation reflect the variability in reaction times within subjects that is not explained by the days of sleep deprivation. This includes measurement error and any other within-subject variability.
+
+### Model Fit and Summary Statistics
+
+- REML criterion at convergence: 1786.5: This is the final value of the Restricted Maximum Likelihood (REML) criterion, used for estimating the variance components of the model. Lower values indicate a better fit when comparing models that nest within one another.
+- Number of obs: 180, groups: Subject, 18: The model was fitted using 180 observations across 18 subjects.
+
+## Predict reaction times including both fixed and random effects
+```{r}
+predicted_reactions <- predict(model_sleep, re.form = NULL)
+
+# Create a new data frame for the predictions
+predictions_df <- data.frame(Reaction = predicted_reactions,
+                             Days = sleepstudy$Days,
+                             Subject = sleepstudy$Subject)
+
+# Plot observed data and add regression lines for each subject
+ggplot(sleepstudy, aes(x = Days, y = Reaction, color = factor(Subject))) +
+  geom_point() + # Plot the observed data points
+  geom_line(data = predictions_df, aes(x = Days, y = Reaction, group = Subject), linetype = "dashed") +
+  theme_minimal() +
+  labs(title = "Observed and Predicted Reaction Time by Days of Sleep Deprivation",
+       x = "Days of Sleep Deprivation", y = "Reaction Time (ms)", color = "Subject")
+
+```

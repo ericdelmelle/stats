@@ -1,0 +1,69 @@
+---
+title: "Causal Analysis"
+author: "EricDelmelle (Penn, Drexel, ChatGPT!)"
+date: "2024-04-04"
+output: html_document
+---
+## Background
+
+We will illustrate the Difference-in-Differences (DiD) method. 
+
+### Load the cars dataset
+While mtcars is not designed for policy analysis, we can creatively interpret its variables to fit a DiD framework for demonstration purposes.
+
+Let's pretend we're analyzing the impact of a fuel efficiency improvement intervention (treatment) on car performance (measured by quarter-mile time, qsec). We'll consider cars with an automatic transmission (am = 0) as the control group and cars with a manual transmission (am = 1) as the treatment group. We'll simulate a 'before' and 'after' scenario based on whether the cars have more than 4 cylinders (cyl > 4), creatively using this as our 'time' variable to demonstrate the DiD methodology.
+```{r}
+# Load the dataset
+data("mtcars")
+
+# Define the 'treatment' group: cars with manual transmission (am = 1)
+mtcars$treatment_status <- ifelse(mtcars$am == 1, 1, 0)
+
+# Define the 'time' variable: 'before' intervention (cyl <= 4), 'after' intervention (cyl > 4)
+mtcars$post_treatment <- ifelse(mtcars$cyl > 4, 1, 0)
+
+# Create the interaction term for DiD analysis
+mtcars$interaction <- mtcars$treatment_status * mtcars$post_treatment
+```
+
+# DID Model
+Now, let's specify a DiD model using linear regression, where we're interested in seeing if the 'intervention' (having a manual transmission) changes the performance (quarter-mile time, qsec) differently before and after the 'policy' (having more than 4 cylinders).
+```{r}
+# DiD analysis
+did_model <- lm(qsec ~ treatment_status + post_treatment + interaction, data = mtcars)
+
+# Display the summary of the model
+summary(did_model)
+```
+# Model summary
+- treatment_status: This coefficient estimates the difference in quarter-mile time between manual (treatment) and automatic (control) cars before the 'policy' (having more than 4 cylinders).
+
+- post_treatment: This coefficient measures the change in quarter-mile time for cars with 4 cylinders or less (before the policy) compared to cars with more than 4 cylinders (after the policy) in the control group (automatic cars).
+
+- interaction: The key coefficient of interest, representing the additional change in quarter-mile time for manual cars after the policy, beyond the general time effect. A significant coefficient here would suggest that the intervention (manual transmission) had a differential impact on performance, considering the number of cylinders.
+
+Model Summary
+
+    Residuals: The residuals, which represent the differences between the observed and predicted values of the dependent variable (qsec), have a median very close to 0. This indicates that the model's predictions are, on average, accurate. The range from the minimum to the maximum residual suggests there is some variability in how well the model predicts individual observations, but overall, the spread is relatively modest.
+
+Coefficients
+
+    (Intercept): The estimated intercept is 20.97, with a very high level of statistical significance (p < 2e-16). This represents the predicted value of qsec (quarter-mile time) for cars with automatic transmission (treatment_status = 0) and less than or equal to 4 cylinders (post_treatment = 0). It's the baseline against which other effects are compared.
+
+    treatment_status: The coefficient for treatment_status is -2.52, significant at the 0.005 level. This indicates that cars with a manual transmission (treatment_status = 1), before considering the number of cylinders, run the quarter-mile 2.52 seconds faster on average than those with an automatic transmission, holding the effect of cylinder number constant.
+
+    post_treatment: The post_treatment coefficient is -3.3094, with a significance level of 0.000174. This suggests that cars with more than 4 cylinders (regardless of transmission type), compared to those with 4 or fewer cylinders, are slower in the quarter-mile by 3.3094 seconds, holding the transmission type constant.
+
+    interaction: The interaction term has an estimate of 0.4754, but with a p-value of 0.648649, it is not statistically significant. This term was supposed to capture any additional effect on quarter-mile time for manual transmission cars with more than 4 cylinders (both the treatment and post-treatment conditions). A non-significant p-value here indicates that the differential effect of having both a manual transmission and more than 4 cylinders is not distinguishable from zero, given the data and the model. This suggests that the interaction between manual transmission and having more than 4 cylinders does not significantly affect quarter-mile times beyond what is already explained by having a manual transmission or having more than 4 cylinders alone.
+
+Model Fit
+
+    Residual standard error: The RSE of 1.216 indicates, on average, how much the quarter-mile times deviate from the line of best fit. Lower values indicate a better fit.
+
+    Multiple R-squared: With a value of 0.582, the model explains 58.2% of the variability in quarter-mile times among the cars in the dataset. It's a measure of how well the model fits the data; higher values indicate a better fit.
+
+    F-statistic: The F-statistic tests whether at least one predictor variable has a non-zero coefficient. With a p-value of about 1.682e-05, the test suggests the model coefficients are collectively significant, providing evidence that the model terms improve the fit compared to a model with only an intercept.
+
+Summary
+
+This model effectively demonstrates how manual transmission and having more than 4 cylinders independently influence quarter-mile times, with cars having manual transmissions or fewer cylinders being faster. However, the interaction between manual transmission and cylinder count does not significantly impact performance beyond the individual effects of these variables.

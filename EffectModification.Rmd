@@ -5,13 +5,13 @@ date: "2024-04-04"
 output: html_document
 ---
 
-# Background
+## Background
 This script is designed to analyze and visualize the effect of smoking on pulse rate across different age groups.  
 
 **Effect modification** is an important concept in epidemiology and health research and in other domains(!), as it can reveal more nuanced relationships between variables than can be understood through simple main effects models.
 
 
-# Loading libraries  
+## Loading libraries  
 We will use the *NHANES*, *dplyr*, and *ggplot2* packages. These are essential for handling the dataset, performing data manipulation, and plotting the results.
 ```{r}
 if (!requireNamespace("NHANES", quietly = TRUE)) install.packages("NHANES")
@@ -23,21 +23,21 @@ library(dplyr)
 library(ggplot2)
 ```
 
-# Data Preparation: 
+## Data Preparation: 
 The script filters the NHANES dataset to include only adults (age 20 and above) with non-missing values for smoking status (SmokeNow) and pulse rate (Pulse). It then categorizes individuals into age groups to simplify the analysis.
 
-## Filter the dataset for adults and non-missing smoking status and pulse rate
+### Filter the dataset for adults and non-missing smoking status and pulse rate
 ```{r}
 data <- NHANES %>%
   filter(Age >= 20, !is.na(SmokeNow), !is.na(Pulse))
 ```
 
-## Categorize age to simplify analysis
+### Categorize age to simplify analysis
 ```{r}
 data$AgeGroup <- cut(data$Age, breaks = c(19, 30, 40, 50, 60, 70, Inf), labels = c("20-30", "31-40", "41-50", "51-60", "61-70", "71+"), right = FALSE)
 ```
 
-#Analyzing the Effect: 
+## Analyzing the Effect: 
 It calculates the mean pulse rate for each combination of age group and smoking status, preparing the data for visualization.
 ```{r}
 effect_analysis <- data %>%
@@ -46,7 +46,7 @@ effect_analysis <- data %>%
   ungroup()
 ```
 
-#Visualizing the Effect: 
+## Visualizing the Effect: 
 Two visualizations are created. The first one is a bar chart showing the mean pulse rate by age group and smoking status. The second visualization is generated after fitting a linear model to predict pulse rate based on smoking status and age group, plotting predicted pulse rates for each combination of age group and smoking status.
 ```{r}
 ggplot(effect_analysis, aes(x = AgeGroup, y = MeanPulse, fill = SmokeNow)) +
@@ -56,7 +56,7 @@ ggplot(effect_analysis, aes(x = AgeGroup, y = MeanPulse, fill = SmokeNow)) +
   theme_minimal()
 ```
 
-#Modeling and Prediction: 
+## Modeling and Prediction: 
 A linear model is used to understand the relationship between pulse rate and the interaction between smoking status and age group. Predictions from this model are then visualized, showing how pulse rate varies across age groups for smokers and non-smokers.
 ```{r}
 data$SmokeNow <- as.factor(data$SmokeNow)
@@ -83,5 +83,20 @@ ggplot(new_data, aes(x = AgeGroup, y = PredictedPulse, color = SmokeNow)) +
   theme_minimal() +
   scale_color_manual(values = c("Non-smoker" = "blue", "Smoker" = "red"))
 ```
+The linear model specified in the script (lm(Pulse ~ SmokeNow * AgeGroup, data = data)) includes an interaction term (SmokeNow * AgeGroup). This interaction term allows the model to estimate different effects of age on pulse rate for smokers compared to non-smokers. In statistical terms, it's testing whether the slope of the relationship between age and pulse rate differs by smoking status.
+
+### Explanation for the coefficients!
+#### Intercepts and main effects
+
+- (Intercept) 74.8456: This is the estimated average pulse rate for the reference group, which in this model is non-smokers aged 20-30. The estimate is highly significant, as indicated by *** (p < 0.001).
+- SmokeNowYes -1.5949: This suggests that, holding age constant at the reference group (20-30), smokers have a pulse rate that is 1.5949 units lower than non-smokers, though this effect is not statistically significant (p = 0.17539).
+- AgeGroup31-40 to AgeGroup71+: These coefficients represent the difference in pulse rate from the reference age group (20-30) for non-smokers, since they don't involve SmokeNowYes. Most are negative, suggesting lower pulse rates in older age groups compared to the 20-30 age group, with varying levels of significance.
 
 
+#### Interaction Effects
+
+- SmokeNowYes:AgeGroup31-40 to SmokeNowYes:AgeGroup71+: These coefficients show how the effect of being in a higher age group on pulse rate changes for smokers compared to non-smokers. For instance, the SmokeNowYes:AgeGroup31-40 coefficient of 4.6388 suggests that the difference in pulse rate between the 31-40 age group and the 20-30 age group is 4.6388 units greater for smokers than for non-smokers, and this effect is statistically significant (p = 0.00367).
+
+#### Some other metrics
+- R2 is very low!!
+- F-statistic is highly significant (p < 0.001), suggesting that the model as a whole is significantly better at predicting pulse rate than a model with no predictors. 
