@@ -1,0 +1,248 @@
+---
+title: "getCensus"
+author: "Eric Delmelle (with ChatGPT, and others)"
+date: "2024-05-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Install and Load Necessary Packages. 
+If you haven’t already installed these packages, you'll need to do so, along with sf and ggplot2 for spatial and plotting operations.
+```{r}
+#install.packages(c("tidycensus", "tigris", "sf", "ggplot2", "dplyr"))
+library(scales)  # Load the scales package for the rescale function
+library(tidycensus)
+library(tigris)
+library(sf)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+```
+
+## Set Up Census API Key.
+You need to have a Census API key. If you don't have one, you can request it from the US Census Bureau. Once you have the key, you can set it in tidycensus.
+```{r }
+census_api_key("bd48ccbbe80006071141a76230184957dd248abe", install = TRUE)
+```
+
+## Fetch Census Tracts and Data. 
+Choose the variables you want from the Census. You can find variable codes in the Census’s American Community Survey (ACS) documentation.
+
+```{r}
+# Define variables
+vars <- c("B03002_003E",  # White population
+          "B19013_001E",  # Median household income
+          "B15003_022E",  # Bachelor's degree or higher
+          "B22001_001E",  # SNAP benefits
+          "B25044_001E",  # Total households
+          "B25044_003E")  # Households with no vehicle
+
+# Fetch data for North Carolina
+nc_data <- get_acs(geography = "tract",
+                   state = "NC",
+                   variables = vars,
+                   year = 2020,
+                   survey = "acs5")
+
+# Ensure the data is cleaned up for pivot
+nc_data <- nc_data %>%
+  filter(!is.na(estimate))  # Remove rows where estimate is NA
+
+# Pivot data to wide format
+nc_data_wide <- nc_data %>%
+  pivot_wider(id_cols = GEOID, 
+              names_from = variable, 
+              values_from = estimate)
+
+# Checking the output
+print(nc_data_wide)
+```
+
+## normalize your data
+```{r}
+nc_data_wide <- nc_data_wide %>%
+  mutate(across(c(B03002_003, B19013_001, B15003_022, B22001_001, B25044_001, B25044_003), 
+                ~rescale(.x, to = c(0, 1)))) %>%
+  drop_na()  # Drop any NA that might have been introduced by scaling
+
+# View the first few rows of the normalized data
+head(nc_data_wide)
+```
+
+
+## kmeans
+```{r}
+set.seed(123)  # for reproducibility
+#kmeans_result <- kmeans(nc_data_wide[, c("B03002_003", "B19013_001", "B15003_022")], centers = 5)
+# Assuming all variables should be included in the k-means analysis
+kmeans_result <- kmeans(nc_data_wide[, c("B03002_003", "B19013_001", "B15003_022",
+                                         "B22001_001", "B25044_003")], centers = 5)
+
+nc_data_wide$cluster <- as.factor(kmeans_result$cluster)  # Add cluster results to the data frame
+```
+
+
+
+```{r}
+nc_tracts <- st_as_sf(tracts(state = "NC", cb = TRUE))
+nc_tracts_data <- left_join(nc_tracts, nc_data_wide, by = "GEOID")
+
+```
+```{r}
+library(ggplot2)
+library(sf)
+
+# Plotting the clusters
+ggplot(nc_tracts_data) +
+  geom_sf(aes(fill = cluster), color = NA) +
+  scale_fill_viridis_d(name = "Cluster", alpha = 0.6) +  # Removed incorrect argument
+  labs(title = "K-Means Clustering of Census Data on NC Tracts",
+       subtitle = "Clustered by Race, Income, and Education",
+       fill = "Cluster") +
+  theme_minimal() +
+  theme(
+    strip.text = element_text(size = 8),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank()
+  )+
+  theme(legend.position = "right",
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5))
+
+centroids <- kmeans_result$centers
+print(centroids)
+```
+
+```{r}
+#install.packages("leaflet")
+library(leaflet)
+
+library(leaflet)
+
+# Creating the interactive map
+map <- leaflet(nc_tracts_data) %>%
+  addProviderTiles(providers$CartoDB.Positron) %>%
+  addPolygons(fillColor = ~colorFactor(palette = viridisLite::viridis(3), domain = nc_tracts_data$cluster)(cluster),
+              fillOpacity = 0.5,
+              color = "#BDBDC3",
+              weight = 1,
+              popup = ~paste("Cluster:", cluster)) %>%
+  addLegend(pal = colorFactor(palette = viridisLite::viridis(3), domain = nc_tracts_data$cluster),
+            values = ~cluster,
+            opacity = 0.8,
+            title = "Cluster",
+            position = "bottomright")
+
+# Show the map
+map
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## make sure variable name is good
+```{r}
+# Descriptive names for each variable
+variable_names <- c(B03002_003 = "WhitePopulation",
+                    B19013_001 = "MedianHouseholdIncome",
+                    B15003_022 = "BachelorDegreeorHigher")
+
+# Add a new column with descriptive names to the data frame
+nc_tracts_data <- nc_tracts_data %>%
+  mutate(variable_name = variable_names[variable])
+```
+
+```{r}
+ggplot(nc_tracts_data) +
+  geom_sf(aes(fill = normalized_estimate), color = NA) +
+  facet_wrap(~variable_name, ncol = 1, labeller = label_parsed) +  # Use descriptive names
+  scale_fill_viridis_c(name = "Normalized\nEstimate", option = "C") +
+  theme_minimal() +
+  #labs(title = "Normalized Census Data Indicators by Tract in North Carolina") +
+  theme(
+    strip.text = element_text(size = 8),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank()
+  )
+```
+
+## k-means
+attention - only works in a wide format
+```{r}
+
+# First, pivot the data from long to wide format if not already done
+library(tidyr)
+
+nc_tracts_data <- nc_data %>%
+  pivot_wider(names_from = variable, values_from = estimate)
+
+# Rename the columns to more readable names if desired
+colnames(nc_tracts_data)[colnames(nc_tracts_data) %in% c("B03002_003", "B19013_001", "B15003_022")] <- c("White_Population", "Median_Household_Income", "Bachelors_or_Higher")
+
+# Check the first few rows to ensure correctness
+head(nc_tracts_data)
+
+```
+
+```{r}
+# Assuming no missing values, but check for them first
+if (anyNA(nc_tracts_data[c("White_Population", "Median_Household_Income", "Bachelors_or_Higher")])) {
+  nc_tracts_data <- na.omit(nc_tracts_data)
+}
+
+set.seed(123)  # for reproducibility
+kmeans_result <- kmeans(nc_tracts_data[, c("White_Population", "Median_Household_Income", "Bachelors_or_Higher")], centers = 3)
+
+# Add the cluster results to the data frame
+nc_tracts_data$cluster <- as.factor(kmeans_result$cluster)
+
+
+```
+
+
+
+
+```{r}
+# Assuming nc_tracts is the spatial data frame with geographic info
+nc_tracts <- st_as_sf(nc_tracts)  # ensure it's an sf object
+
+# Merge with k-means results
+nc_tracts_clustered <- left_join(nc_tracts, nc_tracts_data, by = "GEOID")
+
+# Plot the clusters
+ggplot(nc_tracts_clustered) +
+  geom_sf(aes(fill = cluster), color = NA) +
+  scale_fill_viridis_d(name = "Cluster", discrete = TRUE) +
+  labs(title = "K-Means Clustering of Census Data on NC Tracts",
+       subtitle = "Clustered by Race, Income, and Education") +
+  theme_void() +
+  theme(
+    legend.position = "right"
+  )
+
+
+```
