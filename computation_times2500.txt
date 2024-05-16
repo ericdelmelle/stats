@@ -1,0 +1,2 @@
+cell size, HexCreation, Join, Summarize
+2500, 2.472, 2.224, 2.442
