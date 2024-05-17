@@ -20,6 +20,10 @@ library(sf)
 library(ggplot2)
 library(dplyr)
 library(tidyr)
+if (!requireNamespace("extrafont", quietly = TRUE)) {
+  install.packages("extrafont")
+}
+library(extrafont)
 ```
 
 ## Set Up Census API Key.
@@ -236,7 +240,7 @@ nc_outline <- st_transform(nc_outline, crs = 32617)
 ### Generate the hexagonal grid, conduct join, aggregate data
 ```{r}
 output_file <- "HexComputation_times.txt"
-write("cell size, HexCreation, Join, Summarize", output_file) # write the header
+write("cellSize, HexCreation, Join, Summarize", output_file) # write the header
 
 possibleSizes <-c(5000, 2500, 1000, 500, 250, 100, 50, 30)
 for(cellSize in possibleSizes){
@@ -280,8 +284,76 @@ for(cellSize in possibleSizes){
                          as.numeric(time.takenSummarize),sep = ", ")
   write(line_to_write, file = output_file, append = TRUE)
 }
+```
 
 
+### Visualization of the running time to create hexagon, interpolate and summarize
+```{r}
+
+# Import fonts (do this once per session)
+font_import()
+loadfonts(device = "win")  # Use 'device = "win"' on Windows; omit or adjust on other OS
+
+# List available fonts to find the one you want
+fonts()
+
+
+# Read the data back into R from the text file
+computation_times <- read.table("HexComputation_times.txt", header = TRUE, sep = ",", skip = 1)
+
+# Rename columns appropriately
+colnames(computation_times) <- c("cellSize", "HexCreation", "Join", "Summarize")
+
+computation_times <- computation_times %>%
+  mutate(total_time = HexCreation + Join +Summarize)
+  
+
+
+
+# Revised ggplot code with corrected color mapping
+ggplot(data = computation_times, aes(x = cellSize)) +
+  geom_point(aes(y = log(HexCreation), color = "Hexagon Creation"), size = 2) +
+  #geom_point(aes(y = log(HexCreation)), shape = 3, color = "black", size = 2) +
+  geom_line(aes(y = log(HexCreation), color = "Hexagon Creation"), linetype = "dashed") +
+  geom_point(aes(y = log(Join), color = "Intersection"), size = 2) +
+  geom_line(aes(y = log(Join), color = "Intersection"), linetype = "dashed") +
+  geom_point(aes(y = log(Summarize), color = "Summarize"), size = 2) +
+  geom_line(aes(y = log(Summarize), color = "Summarize"), linetype = "dashed") +
+  geom_point(aes(y = log(total_time), color = "Total Time"), size = 2) +  # Ensure this matches the scale_color_manual
+  geom_line(aes(y = log(total_time), color = "Total Time")) +            
+  geom_hline(yintercept = log(30 * 60), color = "gray15", linetype = "dashed", linewidth = 0.1) +
+  annotate("text", x = 2200, y = log(2500), label = "30 min", 
+           color = "gray15", hjust = -0.1, size=4) +
+
+  geom_hline(yintercept = log(5 * 60), color = "gray15", linetype = "dashed", linewidth = 0.1) +
+  annotate("text", x = 2200, y = log(400), label = "5 min", 
+           color = "gray15", hjust = -0.1, size=4) +
+
+  geom_hline(yintercept = log(1 * 60), color = "gray15", linetype = "dashed", linewidth = 0.1) +
+  annotate("text", x = 2200, y = log(80), label = "1 min", 
+           family = "sans", color = "gray15", hjust = -0.1, size=4) +
+
+      scale_color_manual(
+    values = c("Hexagon Creation" = "#66ccff", 
+               "Intersection" = "#00802b", 
+               "Summarize" = "#aa80ff",
+               "Total Time" = "#e60000"                              # Correct color mapping
+    ),
+    labels = c("Hexagon Creation", "Intersection", "Summarize", "Total Time")
+  ) +
+  labs(x = "Hexagon Cell Size",
+    y = "Time (seconds)",
+    color = "Process"
+  ) +
+  #labs(title = "Normalized Census Data Indicators by Tract in North Carolina") +
+  theme(
+    panel.background = element_rect(fill = "#e8e3cf"),
+    strip.text = element_text(size = 8),
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_blank(),
+    #axis.ticks = element_blank()
+  )
+  theme_light(base_size = 14)  # Set base font size to 14 for better readability
 ```
 
 ### Only retain the hexagons `inside` outline
