@@ -1,0 +1,143 @@
+---
+title:  "Working with Census Data in R using TidyCensus"
+subtitle: "An Introduction"
+author:
+- Julian Perry
+- 
+date: "`r format(Sys.time(), '%d %B %Y')`"
+tags: [TidyCensus, Maps]
+output: html_document
+---
+
+
+# Leveraging the U.S. Census Bureau
+
+Data from the United States Census Bureau are commonly visualized using maps, given that Census and ACS data are aggregated to enumeration units. This chapter will cover the process of map-making using the **tidycensus** R package. Notably, **tidycensus** enables R users to download *simple feature geometry* for common geographies, linking demographic information with their geographic locations in a dataset. In turn, this data model facilitates the creation of both static and interactive demographic maps.
+
+This data is useful in numerous contexts, but figuring out how to access it can be intimidating. R’s TidyCensus package, developed by Kyle Walker and Matt Herman, greatly simplifies the process of using the census API in R, giving users the ability to access data from the Census, ACS, or PEP without needing to manually download datasets.
+
+## Installing the package
+
+The first step is to install and load the package. You’ll then have to load your API key — if you don’t have one, you can sign up on the Census website here. If you add install = TRUE , this key will be saved on your device and you won’t have to repeat this process in the future.
+
+```{r, include=FALSE}
+library(tidycensus)
+census_api_key("bd48ccbbe80006071141a76230184957dd248abe", overwrite=TRUE)
+```
+
+
+## The Basic Commands
+
+Once you have the package and the API key loaded, the most basic command you can use with TidyCensus is get_decennial() command, which allows you to pull data from the decennial census. The first parameter is the geography at which you want the aggregated data, which can be anything from a block to an entire region (a full list of geographies is available at: https://walker-data.com/tidycensus/articles/basic-usage.html).
+
+The second parameter is the actual variable you are looking for. With each data release, the Census Bureau releases the variable names for that iteration of the Census or ACS — the list of variables for the 2020 Census is available here. To load a list of variables into your R workspace, it’s also possible to use the load_variables() command. The most basic variables from the questions that are included on every Census form are in Summary File 1 ("sf1"), which for 2020 can be accessed with the line load_variables(2020, "sf1"). First we’ll be using the variable for the total population of a given geography (P2_001N).
+The final parameter for the get_decennial() command is the year. For this command it is only possible to request years in which a decennial Census was taken. Since TidyCensus goes back to 2000, the three options are 2000, 2010, and 2020.
+
+```{r , include=FALSE}
+pop2020 <- get_decennial(
+geography = "state",
+variables = "P2_001N", #total population
+year = 2020)
+```
+
+The data frame resulting from the above line of code contains a row for every state — as well as Washington D.C. and Puerto Rico — identified by its numerical FIPS code, along with its population in the 2020 Census.
+It is also possible to pull multiple variables at the same time, as with the code below, which generates a data frame containing the total population of every county (P2_001N, the same as above) as well as the number of white residents (P1_003N). With this, it is possible to then calculate the percent of residents in each county who are of a particular demographic. Note that to make sure that each geography gets just one row, with the estimates appearing in separate columns, it’s important to select output = "wide".
+
+
+```{r, include=FALSE}
+CountyRace <- get_decennial(
+geography = "county",
+variables = c(totalpop = "P2_001N", # total county population
+whitepop = "P1_003N"), # white population in county
+output = "wide", # creates output with one row for each county
+year = 2020
+)
+
+CountyRace$pctnonwhite <- NA
+CountyRace$pctnonwhite <- 100 * CountyRace$whitepop / CountyRace$totalpop
+```
+
+Perhaps we want to access data from a year when a decennial Census was not taken, or see a variable that is not measured in the regular Census — the number of citizens in an area, for instance. The get_acs() command makes it possible to access these using the American Community Survey (ACS).
+
+The get_acs() command functions much like the get_decennial() command, but you can select any year (through 2021) and access a wider range of variables. The list of variables for the 2021 ACS available here, and lists for other years can also be obtained using load_variables() (but don’t forget replace “sf1” in the line referenced earlier with "acs1" or "acs5", depending on whether you want to work with 1-year or 5-year estimates). 
+
+Because the ACS data are estimates from a sample of the population, the output will also show a *margin of error*, which defaults to a 90 percent confidence interval (it can be changed, as below, to be a different confidence interval). The default value for the final parameter, "survey", is "acs5", in reference to 5-year ACS estimates; another option is to use data from just the exact year selected, using "acs1" instead of "acs5", but this will automatically remove geographies with a population below 65,000 people and will result in higher margins of error.
+
+```{r message=FALSE, warning=FALSE}
+CountyCitizenship <- get_acs(
+geography = "county",
+variables = c(totalpop = "B07007_001E",
+noncitizens = "B07007_005E"),
+output = "wide",
+year = 2021,
+moe_level = 95,
+survey = "acs5"
+)
+```
+
+## Merging Census Data With Other Datasets
+
+Often, researchers using Census data will want to use it in combination with other datasets. This is easiest to do by using the `GEOID` column in the output from get_decennial() or get_acs(), which contains a unique identifier for each geography — typically, the FIPS codes that the Federal Government assigns to states and counties.
+
+For example, a researcher studying “contact theory” — the idea that “intergroup contact typically reduces prejudice”, as described by one review of the literature — might want to explore whether white voters’ racial attitudes vary depending on the diversity of their social context. If we have a survey that asks individuals about their racial attitudes, we can easily merge it with Census data as long as it contains FIPS codes for whatever zip code, county, or state respondents live in.
+
+
+Below, I use county FIPS codes to add measurements from the AllCounties dataframe generated earlier to the 2020 Cooperative Election Study, which asked voters whether they agree with the statement “White people in the U.S. have certain advantages because of the color of their skin”. By linking these responses to census data, I generate the graph below and see that whites in more diverse counties are far more likely to agree than those who live in overwhelmingly white counties.
+
+```{r message=FALSE, warning=FALSE}
+# download the csv for the 2020 CES at https://cces.gov.harvard.edu/
+ces <- read.csv("/Users/delmelle/Downloads/CES20_Common_OUTPUT_vv.csv")
+
+# subsetting for just white respondents
+ces <- subset(ces, race == 1)
+
+# creating variable to indicate acknowledgment of white privilege
+ces$privilege <- 0
+ces$privilege[ces$CC20_440a==1 | ces$CC20_440a==2] <- 1
+
+# changing GEOIDs to be numeric variables
+ces$GEOID <- as.numeric(ces$countyfips)
+CountyRace$GEOID <- as.numeric(CountyRace$GEOID)
+
+# merging data
+library(tidyverse)
+merge <- left_join(ces, CountyRace, by = c("GEOID" = "GEOID"))
+
+# generating plot
+ggplot(merge, aes(x = pctnonwhite, y = privilege)) +
+geom_smooth(method = "gam", linewidth = 1.5, se = TRUE) +
+labs(x = "Percent of home county's population that is white", y = "Proportion of whites acknowledging privilege", title = "White respondents' acknowledgement of white privilege") + theme_bw()
+```
+
+Knowing how to use the get_decennial and get_acs commands opens the door to a whole world of data about the U.S. population. For PEP data from the Census Bureau’s models of how the population changes over time, the get_estimates() and get_flows() functions much like the get_acs() command; further details about how to use those, as well as any of the package’s other features, are available on the TidyCensus website here.
+
+```{r, include=FALSE}
+library(ggplot2)
+library(sf)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(tigris)
+
+# Set your Census API key
+census_api_key("bd48ccbbe80006071141a76230184957dd248abe")
+
+# Load census tract shapefile for North Carolina
+nc_tracts <- get_acs(geography = "tract", 
+                      variables = "B19013_001", 
+                      state = "NC",
+                      geometry = TRUE)
+
+# Plot median income map
+
+print(
+    plt2 <- ggplot() +
+  geom_sf(data = nc_tracts, aes(fill = estimate), alpha=0.7) +
+  scale_fill_viridis_c(name = "Median Income", label = scales::dollar) +
+  labs(title = "Median Income Across North Carolina",
+       caption = "Source: US Census Bureau",
+       fill = "Median Income") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+)
+ggsave("mtcars.png")
+```

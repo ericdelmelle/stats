@@ -1,0 +1,72 @@
+---
+title: "Basic Usage of Tidy Census"
+author: "EricDelmelle (from Kyle Walker)"
+date: "2024-02-08"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Census API
+To get started working with tidycensus, users should load the package along with the tidyverse package, and set their Census API key. A key can be obtained from http://api.census.gov/data/key_signup.html.
+
+```{r}
+library(tidycensus)
+library(tidyverse)
+
+census_api_key("bd48ccbbe80006071141a76230184957dd248abe")
+```
+
+There are two major functions implemented in tidycensus: get_decennial(), which grants access to the 2000, 2010, and 2020 decennial US Census APIs, and get_acs(), which grants access to the 1-year and 5-year American Community Survey APIs.
+
+In this basic example, let’s look at median age by state in 2020, with data drawn from the Demographic and Housing Characteristics summary file:
+
+```{r}
+age20 <- get_decennial(geography = "state", 
+                       variables = "P13_001N", 
+                       year = 2020,
+                       sumfile = "dhc")
+
+head(age20)
+```
+
+The function returns a tibble with four columns by default: GEOID, which is an identifier for the geographical unit associated with the row; NAME, which is a descriptive name of the geographical unit; variable, which is the Census variable represented in the row; and value, which is the value of the variable for that unit. By default, tidycensus functions return tidy data frames in which rows represent unit-variable combinations; for a wide data frame with Census variable names in the columns, set output = "wide" in the function call.
+
+As the function has returned a tidy object, we can visualize it quickly with ggplot2:
+
+```{r}
+age20 %>%
+  ggplot(aes(x = value, y = reorder(NAME, value))) + 
+  geom_point()
+```
+# Working with ACS data
+American Community Survey (ACS) data are available from the 1-year ACS since 2005 for geographies of population 65,000 and greater, and from the 5-year ACS for all geographies down to the block group level starting with the 2005-2009 dataset. get_acs() defaults to the 5-year ACS with the argument survey = "acs5", but 1-year ACS data are available using survey = "acs1".
+
+ACS data differ from decennial Census data as they are based on an annual sample of approximately 3 million households, rather than a more complete enumeration of the US population. In turn, ACS data points are estimates characterized by a margin of error. tidycensus will always return the estimate and margin of error together for any requested variables when using get_acs(). In turn, when requesting ACS data with tidycensus, it is not necessary to specify the "E" or "M" suffix for a variable name. Let’s fetch median household income data from the 2017-2021 ACS for counties in Vermont.
+
+```{r}
+vt <- get_acs(geography = "county", 
+              variables = c(medincome = "B19013_001"), 
+              state = "VT", 
+              year = 2021)
+
+vt
+```
+
+The output is similar to a call to get_decennial(), but instead of a value column, get_acs returns estimate and moe columns for the ACS estimate and margin of error, respectively. moe represents the default 90 percent confidence level around the estimate; this can be changed to 95 or 99 percent with the moe_level parameter in get_acs if desired.
+
+As we have the margin of error, we can visualize the uncertainty around the estimate:
+
+```{r}
+vt %>%
+  mutate(NAME = gsub(" County, Vermont", "", NAME)) %>%
+  ggplot(aes(x = estimate, y = reorder(NAME, estimate))) +
+  geom_errorbarh(aes(xmin = estimate - moe, xmax = estimate + moe)) +
+  geom_point(color = "red", size = 3) +
+  labs(title = "Household income by county in Vermont",
+       subtitle = "2017-2021 American Community Survey",
+       y = "",
+       x = "ACS estimate (bars represent margin of error)")
+```
