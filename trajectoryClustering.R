@@ -1,4 +1,4 @@
-# Install the required packages if you haven't already
+# Install the required packages if you haven't already 
 install.packages("longitudinal")
 install.packages("ggplot2")
 install.packages("kml")
