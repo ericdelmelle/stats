@@ -1,0 +1,89 @@
+---
+title: "finiteMixtureModeling"
+author: "various participants"
+date: "April 2024"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(repos = c(CRAN = "https://cran.rstudio.com/"))
+
+```
+### Context
+Finite mixture models are used to identify a mixture of distributions within a dataset that isn't immediately discernible from the raw data. These models can help in clustering, classification, and density estimation.
+
+For this example, let's use the faithful dataset available in R, which records the waiting time between eruptions and the duration of the eruption for the Old Faithful geyser in Yellowstone National Park. This dataset is often used to demonstrate clustering because the data points form two clear clusters based on the duration of the eruptions.
+
+### Installing and Loading Necessary Packages
+```{r}
+install.packages("mclust")
+install.packages("ggplot2")
+library(mclust)
+library(ggplot2)
+```
+
+
+### Load and explore the data
+```{r}
+data("faithful")
+
+ggplot(faithful, aes(x=waiting, y=eruptions)) +
+  geom_point() +
+  labs(title = "Old Faithful Eruption Data", x = "Waiting time to next eruption (minutes)", y = "Eruption duration (minutes)")
+
+```
+
+### Fit a finite mixture model
+
+How to interpret the results: 
+
+
+```{r}
+model <- Mclust(faithful)
+summary(model)
+
+```
+Means: You will see the means of the Gaussian components for each variable in your dataset. In the case of the faithful dataset, this would be the mean waiting time and eruption duration for each cluster.
+```{r}
+View(model$parameters$mean)
+```
+Variance (or Covariance): The summary shows the variance for each cluster if the model assumes equal shape and orientation but different volumes; otherwise, it displays a full covariance matrix. The variance and covariance are critical for understanding how spread out each cluster is around the mean.
+
+. EII: All clusters have the same spherical covariance.
+. VII: All clusters have spherical covariances but different variances.
+. EEI: Clusters share the same diagonal covariance matrix.
+. VEI: Clusters have diagonal covariance matrices with different variances but equal shape.
+. EVI: Clusters have diagonal covariances with varying volumes and shapes.
+. VVI: Each cluster has its own diagonal covariance matrix.
+. EEE: All clusters share the same general covariance matrix.
+. VEE: Clusters have general covariance matrices with varying volumes.
+. EVE: Clusters have general covariances with equal volume but varying shape.
+. VVE: Clusters have general covariance matrices with varying volumes and shapes.
+. VVV: Each cluster has its own general covariance matrix.
+
+```{r}
+# To access the covariance matrices for each cluster
+covariances <- model$parameters$variance$sigma
+
+# Print the covariance matrices
+print(covariances)
+```
+```{r}
+plot(model, what = "uncertainty")
+
+```
+### Visualize the results
+Plot the classification obtained from the mixture model:
+```{r}
+plot(model, what="classification")
+```
+
+Create a density plot with the results of the mixture model overlaid:
+```{r}
+ggplot(faithful, aes(x=waiting)) +
+  geom_density(aes(fill=factor(model$classification)), alpha=0.5) +
+  labs(title = "Density Plot of Waiting Times by Cluster", x = "Waiting time to next eruption (minutes)")
+
+```

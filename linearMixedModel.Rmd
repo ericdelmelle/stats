@@ -1,0 +1,135 @@
+---
+title: "Linear Mixed Model"
+author: "Eric Delmelle"
+date: "2024-03-12"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+### Context
+
+Here is some context
+
+- **Mixed** because it includes both fixed effects (these effects are constant for all observations) and random effects (these effects vary across groups, or levels of a factor).
+- LLM can model the means of the data, but their variance and covariance. 
+- It is also called multi-level models.
+- LMMs as a method for analyzing data that are non independent, multilevel/hierarchical, longitudinal, or correlated. 
+- Data is not independent from one another; LMMs account for the correlation among observation by including random effects in the model.
+
+An example:
+
+There is some structure in your data - For example, students could be sampled from within classrooms, or patients from within doctors. When there are multiple levels, such as patients seen by the same doctor, the variability in the outcome can be thought of as being either within group or between group. Patient level observations are not independent, as within a given doctor patients are more similar. 
+
+
+### Formulation
+
+CLM: $Y$ = $\beta X$ + $\epsilon$
+
+LMM: $Y$ = $\beta X$ + $\gamma Z$ + $\epsilon$
+
+- $Y$ dependent (outcome) variable.
+- $X$ design matrix for fixed effects.
+- $\beta$ vector of the fixed effect coefficients.
+- $Z$ design matrix for random effects.
+- $\gamma$ vector of the random effect coefficients.
+- $\epsilon$  vector of the residual errors.
+
+Difference between LMM and CLM: inclusion of the random effects term $\gamma Z$ in the LMM equation. This term allows for the modeling of the correlation structure and the estimation of the random effect coefficients.
+
+
+### Fixed and Random Effects in Linear Mixed Models
+In LMMS, *fixed* and *random* effects are used to model different sources of variability in the data.
+
+**Fixed Effects** represent the average effects across all groups or subjects in the data. They are called “fixed” because their values are assumed to be constant and non-random. Fixed effects are typically used to represent the main factors or variables of interest in the study. For example, in a study comparing the effect of the different treatments on patient outcomes, the treatment variable would be a fixed effect.
+
+**Random Effects**  capture the variability between different groups or subjects in the data. They are called “random” because their values are assumed to be drawn from a random distribution. Random effects allow for the estimation of group-level or subject-level effects and account for correlation structure among observations within the same group or subject
+
+### Install packages
+```{r, include=FALSE}
+if(!require(lme4)) install.packages("lme4")
+if(!require(ggplot2)) install.packages("ggplot2")
+library(lme4)
+library(ggplot2)
+```
+
+### Prepare your data
+The data should be organized in a long format, with each row representing a single observation and columns representing the response variable, fixed effects, and random effects. Additionally, the data should be grouped or nested based on levels of random effects.
+
+The sleep dataset contains the reaction times on a series of days after varying levels of sleep deprivation for subjects.
+
+- **Reaction**: The reaction time in milliseconds to a series of tests.
+- **Days**: The number of days of sleep deprivation. This variable ranges from 0 (no sleep deprivation) to 9 (nine days of sleep deprivation).
+- **Subject**: An identifier for each subject in the study. Each subject underwent the same procedure of sleep deprivation over the 10 days.
+
+```{r}
+data("sleepstudy", package = "lme4")
+```
+
+```{r}
+# Create the plot
+plot(Reaction ~ Days, data = sleepstudy,
+     main = "Reaction Time vs. Days of Sleep Deprivation",
+     xlab = "Days of Sleep Deprivation",
+     ylab = "Reaction Time (ms)",
+     pch = 19,  # Type of point. 19 is solid circle
+     col = "blue")  # Color of points
+```
+
+
+### Fit a Linear Mixed Model
+Reaction is the response variable, Days is a fixed effect, and we have random intercepts for subjects ((1|Subject)).
+
+```{r}
+model <- lmer(Reaction ~ Days + (1 | Subject), data = sleepstudy)
+summary(model)
+```
+
+```{r}
+sleepstudy$Predicted <- predict(model)
+
+ggplot(sleepstudy, aes(x = Days, y = Reaction, group = Subject)) +
+  geom_line(aes(color = as.factor(Subject)), alpha = 0.5) +
+  geom_point(aes(color = as.factor(Subject)), alpha = 0.5) +
+  geom_line(aes(y = Predicted), color = "blue", linewidth = .5) +
+  labs(title = "Reaction Time over Days with LMM Predictions",
+       x = "Day", y = "Reaction Time") +
+  theme_minimal() +
+  scale_color_discrete(name = "Subject")
+```
+
+
+```{r}
+# Fit a linear model
+lm_model <- lm(Reaction ~ Days, data = sleepstudy)
+
+# New data frame for predictions
+new_data <- data.frame(Days = seq(min(sleepstudy$Days), max(sleepstudy$Days), length.out = 100))
+
+# Generate predictions with confidence intervals
+preds <- predict(lm_model, newdata = new_data, interval = "confidence")
+
+# Add predictions and intervals to the new_data data frame
+new_data$Reaction = preds[, "fit"]
+new_data$Lower = preds[, "lwr"]
+new_data$Upper = preds[, "upr"]
+
+
+ggplot(sleepstudy, aes(x = Days, y = Reaction)) +
+  geom_point() +  # Observed data points
+  geom_line(data = new_data, aes(x = Days, y = Reaction), color = "blue") +  # Fitted line
+  geom_ribbon(data = new_data, aes(x = Days, ymin = Lower, ymax = Upper), alpha = 0.2, fill = "blue") +  # Confidence bands
+  xlab("Days of Sleep Deprivation") +
+  ylab("Reaction Time (ms)") +
+  ggtitle("Reaction Time vs. Days of Sleep Deprivation with Confidence Bands") +
+  theme_minimal()
+
+
+```
+### Interpretation
+
+**Fixed Effect (Days)**: The fixed effect of days on reaction time measures the average effect of each additional day of sleep deprivation on the subjects' reaction times across the study. A positive coefficient for days would indicate that, on average, reaction times increase (get worse) with each additional day of sleep deprivation.
+
+**Random Effects (Subject)**: The random effects account for the variability among subjects that is not explained by the fixed effects. This includes differences in baseline reaction times and differences in how individual subjects' reaction times change with sleep deprivation. A random intercept for subjects allows each subject to have a different baseline reaction time, acknowledging that some people naturally react faster or slower than others.
+
